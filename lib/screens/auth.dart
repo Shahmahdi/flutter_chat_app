@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:chat_app/widgets/user_image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -18,26 +21,34 @@ class _AuthScreen extends State<AuthScreen> {
   var _isLogin = true;
   var _enteredEmail = "";
   var _enteredPassword = "";
+  File? _selectedImage;
+  var _isLoading = false;
 
   void _submit() async {
     final isValid = _formKey.currentState!.validate();
-    if (!isValid) {
+    if (!isValid || (!_isLogin && _selectedImage == null)) {
       return;
     }
     _formKey.currentState!.save();
     try {
+      setState(() {
+        _isLoading = true;
+      });
       if (_isLogin) {
-        final response = await _firebase.signInWithEmailAndPassword(
+        await _firebase.signInWithEmailAndPassword(
           email: _enteredEmail,
           password: _enteredPassword,
         );
-        print(response);
       } else {
         final userCredentials = await _firebase.createUserWithEmailAndPassword(
           email: _enteredEmail,
           password: _enteredPassword,
         );
-        print(userCredentials);
+
+        final storageRef = FirebaseStorage.instance.ref().child("user_images").child("${userCredentials.user!.uid}.jpg");
+        await storageRef.putFile(_selectedImage!);
+        final imageUrl = await storageRef.getDownloadURL();
+        print(imageUrl);
       }
     } on FirebaseAuthException catch (error) {
       ScaffoldMessenger.of(context).clearSnackBars();
@@ -46,6 +57,9 @@ class _AuthScreen extends State<AuthScreen> {
           content: Text(error.message ?? "Authentication failed"),
         ),
       );
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
@@ -79,7 +93,11 @@ class _AuthScreen extends State<AuthScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           if (!_isLogin)
-                            UserImagePicker(),
+                            UserImagePicker(
+                              onPickedImage: (pickedImage) {
+                                _selectedImage = pickedImage;
+                              },
+                            ),
                           TextFormField(
                             decoration: const InputDecoration(
                               labelText: "Email Address",
@@ -115,15 +133,18 @@ class _AuthScreen extends State<AuthScreen> {
                             },
                           ),
                           const SizedBox(height: 12),
-                          ElevatedButton(
-                            onPressed: _submit,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Theme.of(context)
-                                  .colorScheme
-                                  .primaryContainer,
+                          if (_isLoading)
+                            const CircularProgressIndicator()
+                          else
+                            ElevatedButton(
+                              onPressed: _submit,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Theme.of(context)
+                                    .colorScheme
+                                    .primaryContainer,
+                              ),
+                              child: Text(_isLogin ? "Login" : "Signup"),
                             ),
-                            child: Text(_isLogin ? "Login" : "Signup"),
-                          ),
                           TextButton(
                             onPressed: () {
                               setState(() {
